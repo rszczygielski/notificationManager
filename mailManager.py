@@ -6,9 +6,10 @@ class MailManager():
         self.gmail = Gmail()
 
     def sendMail(self, msg, subject, toSend):
-         message = self.gmail.send_message(to= toSend, msg_html=msg, sender=self.sender, subject=subject)
+         self.gmail.send_message(to= toSend, msg_html=msg, sender=self.sender, subject=subject)
 
 
 if __name__ == "__main__":
     mailManager = MailManager("radek.szczygielski.trash@gmail.com")
     mailManager.sendMail(msg="Hello World", subject="Test email", toSend="radek.szczygielski87@gmail.com")
+    

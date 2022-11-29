@@ -4,7 +4,7 @@ import time
 from argparse import ArgumentParser
 from enum import Enum, auto
 from mailManager import MailManager
-from contacts.contacts import Contacts
+from contacts.contacts import Contacts, Number, Email
 from myLogger.myLogger import Logger
 
 
@@ -22,9 +22,9 @@ class User():
     def __str__(self):
         return f'{self.firstName} {self.lastName}'
 
-class NotificationManager():
+class NotificationManager(Contacts):
     def __init__(self):
-        self.contacts = Contacts("contacts.txt") 
+        super().__init__("contacts.txt")
         self.activeUsers = []
         self.activeUsersFile = "active_users.txt"
         self.readActiveUsers()
@@ -39,18 +39,25 @@ class NotificationManager():
     @saveDecorator
     def addUserToActive(self, firstName, lastName):
         for activeUser in self.activeUsers:
-            if activeUser.firstName == firstName and activeUser.lastName == lastName:
+            # if activeUser.firstName == firstName and activeUser.lastName == lastName:
+            if activeUser == f"{firstName} {lastName}":
                 Logger.ERROR("This active user already exist")
                 return
-        for contact in self.contacts.contacts:
+        numberOfActiveUsers = len(self.activeUsers)
+        for contact in self.contacts:
             if contact.firstName == firstName and contact.lastName == lastName:
                 self.activeUsers.append(User(firstName, lastName))
-    
+                Logger.INFO(f"User {firstName} {lastName} added to active users")
+        newNumberOfActiveUsers = len(self.activeUsers)
+        if numberOfActiveUsers ==  newNumberOfActiveUsers:
+            Logger.INFO("There is no such contact, add contact first than update active users")
+
     @saveDecorator
     def addUsersToActive(self, users:list):
         for user in users:
-            if user.isinstance(User):
-                self.addUsersToActive(user.firstName, user.lastName)
+            if isinstance(user, User):
+                self.addUserToActive(user.firstName, user.lastName)
+        
 
     def sendMailToActiveUsers(self, sender, msg, subject):
         mailManager = MailManager(sender)
@@ -67,15 +74,26 @@ class NotificationManager():
         with open(self.activeUsersFile) as activeUsersFile:
             for line in activeUsersFile.readlines():
                 self.activeUsers.append(User.initFromString(line))
+    
+    def printActiveUsers(self):
+        for activeUser in self.activeUsers:
+            print(activeUser)
 
-class TerminalUser():
+class TerminalUser(NotificationManager):
     def __init__(self):
-        self.userManager = NotificationManager()
+        super().__init__()
+    
+    def terminalAddContact(self):
+        firstName = input("First name: ")
+        lastName = input("Last name: ")
+        newNumber = input("New number: ")
+        newEmail = input("New email: ")
+        self.addContact(firstName, lastName, Number(newNumber), Email(newEmail))
 
     def terminalAddUserToActive(self):
         firstName = input("First Name: ")
         lastName = input("Last Name: ")
-        self.userManager.addUserToActive(firstName, lastName)
+        self.addUserToActive(firstName, lastName)
     
     def terminalAddUsersToActive(self):
         try:
@@ -88,19 +106,19 @@ class TerminalUser():
             firstName = input("First Name: ")
             lastName = input("Last Name: ")
             listOfUsers.append(User(firstName, lastName))
-        self.userManager.addUsersToActive(listOfUsers)
+        self.addUsersToActive(listOfUsers)
     
     def terminalSendMailToActiveUsers(self):
         sender = input("Enter sender email: ")
         messageToSend = input("Massage to send: ")
         subject = input("Enter a subject for the email: ")
-        self.userManager.sendMailToActiveUsers(sender, messageToSend, subject)
+        self.sendMailToActiveUsers(sender, messageToSend, subject)
 
     def terminalSaveActiveContactsToFile(self):
-        self.userManager.saveActiveContactsToFile()
+        self.saveActiveContactsToFile()
     
-    def terminalReadActiveUsers(self,):
-        self.userManager.readActiveUsers()
+    def terminalPrintActiveUsers(self,):
+        self.printActiveUsers()
 
     def exitTerminal(self):
         exit()
@@ -120,22 +138,24 @@ class Killer():
         self.killer = True
 
 class ComendTerminal(Enum):
+    ADD_CONTACT = auto()
     ADD_USER_TO_ACTIVE = auto()
     ADD_USERS_TO_ACTIVE = auto()
     SEND_EMAIL_TO_ACTIVE_USERS = auto()
     SAVE_ACTIVE_USERS_TO_FILE= auto()
-    READ_ACTIVE_USERS = auto()
+    PRINT_ACTIVE_USERS = auto()
     EXIT = auto()
 
 def terminalMode():
     terminal = TerminalUser()
 
     terminalCommandDict ={
+        ComendTerminal.ADD_CONTACT.value: terminal.terminalAddContact,
         ComendTerminal.ADD_USER_TO_ACTIVE.value: terminal.terminalAddUserToActive,
         ComendTerminal.ADD_USERS_TO_ACTIVE.value: terminal.terminalAddUsersToActive,
         ComendTerminal.SEND_EMAIL_TO_ACTIVE_USERS.value: terminal.terminalSendMailToActiveUsers,
         ComendTerminal.SAVE_ACTIVE_USERS_TO_FILE.value: terminal.terminalSaveActiveContactsToFile,
-        ComendTerminal.READ_ACTIVE_USERS.value: terminal.terminalReadActiveUsers,
+        ComendTerminal.PRINT_ACTIVE_USERS.value: terminal.terminalPrintActiveUsers,
         ComendTerminal.EXIT.value: terminal.exitTerminal,
     }
 
@@ -165,7 +185,7 @@ def notificationMode(notificationDirPath):
                 message = readFile.read()
             notificationManager.sendMailToActiveUsers("radek.szczygielski.trash@gmail.com", message, notificationFile)
             os.remove(notificationFilePath)
-        time.sleep(0.1)  
+        time.sleep(0.1)
 
 if __name__ == "__main__":
     parser = ArgumentParser("Notification Manager for sending emails")
