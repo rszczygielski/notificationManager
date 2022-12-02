@@ -1,6 +1,7 @@
 import os
 import signal
 import time
+from abc import ABC, abstractmethod
 from argparse import ArgumentParser
 from enum import Enum, auto
 from mailManager import MailManager
@@ -39,7 +40,6 @@ class NotificationManager(Contacts):
     @saveDecorator
     def addUserToActive(self, firstName, lastName):
         for activeUser in self.activeUsers:
-            # if activeUser.firstName == firstName and activeUser.lastName == lastName:
             if activeUser == f"{firstName} {lastName}":
                 Logger.ERROR("This active user already exist")
                 return
@@ -79,7 +79,7 @@ class NotificationManager(Contacts):
         for activeUser in self.activeUsers:
             print(activeUser)
 
-class TerminalUser(NotificationManager):
+class TerminalUserInteraction(NotificationManager):
     def __init__(self):
         super().__init__()
     
@@ -123,19 +123,18 @@ class TerminalUser(NotificationManager):
     def exitTerminal(self):
         exit()
 
-class Killer():
-    def __init__(self):
-        self.killer = False
-        signal.signal(signal.SIGINT, self.handlerInterupt)
-        signal.signal(signal.SIGTSTP, self.handlerTerminalStop)
-    
+
+#to jest interface bo jest tylko szkieletem, Python nie wspiera interfaceów natomiast przyjęło się, że można je tworzyc na podstawie klas abstrakcyjnych, interface jest gołym szkieletem wyłącznie z abstrakcyjnymi metodami i nie ma zmiennych
+# klasa abstarkcyjna nie będące interfacem posiada zmienne oraz metody nie abstrakcyjne, ma co najmniej jedną metodę abrakcyjną oraz zmienną lub metodę nie abstrakcyjną 
+class Killer(ABC):
+
+    @abstractmethod
     def handlerInterupt(self, *args):
-        print("\tInterupt signal")
-        self.killer = True
+        pass
     
+    @abstractmethod
     def handlerTerminalStop(self, *args):
-        print("\tStop terminal signal")
-        self.killer = True
+        pass
 
 class ComendTerminal(Enum):
     ADD_CONTACT = auto()
@@ -146,46 +145,62 @@ class ComendTerminal(Enum):
     PRINT_ACTIVE_USERS = auto()
     EXIT = auto()
 
-def terminalMode():
-    terminal = TerminalUser()
+class TerminalMode(TerminalUserInteraction):
+    def __init__(self):
+        super().__init__()
+        self.terminalCommandDict ={
+            ComendTerminal.ADD_CONTACT.value: self.terminalAddContact,
+            ComendTerminal.ADD_USER_TO_ACTIVE.value: self.terminalAddUserToActive,
+            ComendTerminal.ADD_USERS_TO_ACTIVE.value: self.terminalAddUsersToActive,
+            ComendTerminal.SEND_EMAIL_TO_ACTIVE_USERS.value: self.terminalSendMailToActiveUsers,
+            ComendTerminal.SAVE_ACTIVE_USERS_TO_FILE.value: self.terminalSaveActiveContactsToFile,
+            ComendTerminal.PRINT_ACTIVE_USERS.value: self.terminalPrintActiveUsers,
+            ComendTerminal.EXIT.value: self.exitTerminal,
+        }
 
-    terminalCommandDict ={
-        ComendTerminal.ADD_CONTACT.value: terminal.terminalAddContact,
-        ComendTerminal.ADD_USER_TO_ACTIVE.value: terminal.terminalAddUserToActive,
-        ComendTerminal.ADD_USERS_TO_ACTIVE.value: terminal.terminalAddUsersToActive,
-        ComendTerminal.SEND_EMAIL_TO_ACTIVE_USERS.value: terminal.terminalSendMailToActiveUsers,
-        ComendTerminal.SAVE_ACTIVE_USERS_TO_FILE.value: terminal.terminalSaveActiveContactsToFile,
-        ComendTerminal.PRINT_ACTIVE_USERS.value: terminal.terminalPrintActiveUsers,
-        ComendTerminal.EXIT.value: terminal.exitTerminal,
-    }
+    def startTerminalMenu(self):
+        textInput = "\n"
+        for command in ComendTerminal:
+            textInput += f"\tPress {command.value} to {command.name}\n"
+        
+        while True:
+            Logger.settings(show_date=False, show_file_name=False)
+            try:
+                userInput = int(input(textInput))
+            except ValueError:
+                Logger.ERROR("WRONG INPUT VALUE")
+            try:
+                self.terminalCommandDict[userInput]()
+            except KeyError:
+                Logger.ERROR("WRONG INPUT VALUE")
 
-    textInput = "\n"
-    for command in ComendTerminal:
-        textInput += f"\tPress {command.value} to {command.name}\n"
+
+class NotificationMode(NotificationManager, Killer):
+    def __init__(self, notificationDirPath):
+        NotificationManager.__init__(self)
+        self.killer = False
+        signal.signal(signal.SIGINT, self.handlerInterupt)
+        signal.signal(signal.SIGTSTP, self.handlerTerminalStop)
+        self.notificationDirPath = notificationDirPath
+
+    def startNotificationMode(self):
+        while not self.killer:
+            listOfFiles = os.listdir(self.notificationDirPath)
+            for notificationFile in listOfFiles:
+                notificationFilePath = os.path.join(self.notificationDirPath, notificationFile)
+                with open(notificationFilePath) as readFile:
+                    message = readFile.read()
+                self.sendMailToActiveUsers("radek.szczygielski.trash@gmail.com", message, notificationFile)
+                os.remove(notificationFilePath)
+            time.sleep(0.1)
     
-    while True:
-        Logger.settings(show_date=False, show_file_name=False)
-        try:
-            userInput = int(input(textInput))
-        except ValueError:
-            Logger.ERROR("WRONG INPUT VALUE")
-        try:
-            terminalCommandDict[userInput]()
-        except KeyError:
-            Logger.ERROR("WRONG INPUT VALUE")
-
-def notificationMode(notificationDirPath):
-    notificationManager = NotificationManager()
-    killerInstance = Killer()
-    while not killerInstance.killer:
-        listOfFiles = os.listdir(notificationDirPath)
-        for notificationFile in listOfFiles:
-            notificationFilePath = os.path.join(notificationDirPath, notificationFile)
-            with open(notificationFilePath) as readFile:
-                message = readFile.read()
-            notificationManager.sendMailToActiveUsers("radek.szczygielski.trash@gmail.com", message, notificationFile)
-            os.remove(notificationFilePath)
-        time.sleep(0.1)
+    def handlerInterupt(self, *args):
+        print("\tInterupt signal")
+        self.killer = True
+    
+    def handlerTerminalStop(self, *args):
+        print("\tStop terminal signal")
+        self.killer = True
 
 if __name__ == "__main__":
     parser = ArgumentParser("Notification Manager for sending emails")
@@ -193,6 +208,8 @@ if __name__ == "__main__":
     arg = parser.parse_args()
     interactiveMode = arg.interactive_mode
     if interactiveMode:
-        terminalMode()
+        terminalMode = TerminalMode()
+        terminalMode.startTerminalMenu()
     else:
-        notificationMode("/home/rszczygielski/pythonVSC/personal_classes/notificationManager/notifications")
+        notificationMode = NotificationMode("/home/rszczygielski/pythonVSC/personal_classes/notificationManager/notifications")
+        notificationMode.startNotificationMode()
